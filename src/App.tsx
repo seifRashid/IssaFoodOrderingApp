@@ -7,6 +7,7 @@ import CheckoutSection from "./components/CheckoutSection";
 import ActiveOrderTracking from "./components/ActiveOrderTracking";
 import CustomerDashboard from "./components/CustomerDashboard";
 import AdminDashboard from "./components/AdminDashboard";
+import AuthScreen from "./components/AuthScreen";
 import { 
   ChefHat, Clock, Compass, Activity, ArrowRight, ShieldCheck, 
   MapPin, Star, Sparkles, MessageCircle, AlertCircle, ShoppingBag,
@@ -26,6 +27,7 @@ function AppContent() {
     isActionLoading,
     user,
     switchUserRole,
+    signOutUser,
     adminSubTab,
     setAdminSubTab
   } = useStore();
@@ -472,12 +474,48 @@ function AppContent() {
         {/* ==========================================
             TAB: DASHBOARD (Simple Customer overview)
             ========================================== */}
-        {activeTab === "dashboard" && <CustomerDashboard />}
+        {activeTab === "dashboard" && (
+          user ? <CustomerDashboard /> : <AuthScreen />
+        )}
 
         {/* ==========================================
             TAB: ADMIN-DASHBOARD (Managers full ledger platform)
             ========================================== */}
-        {activeTab === "admin-dashboard" && <AdminDashboard />}
+        {activeTab === "admin-dashboard" && (
+          user ? (
+            user.role === "admin" ? (
+              <AdminDashboard />
+            ) : (
+              <div className="max-w-md mx-auto my-12 bg-white border border-stone-200 rounded-3xl p-8 shadow-xl text-center space-y-4">
+                <div className="w-12 h-12 bg-amber-100 text-amber-800 rounded-2xl flex items-center justify-center mx-auto border border-amber-200 font-extrabold text-lg">
+                  ⚠️
+                </div>
+                <h3 className="text-xl font-bold text-stone-900 font-sans tracking-tight">Access Restricted</h3>
+                <p className="text-xs text-stone-500 leading-relaxed">
+                  You are currently logged in with a <strong className="text-amber-700 capitalize">{user.role}</strong> role. The Administrator dashboard is reserved strictly for site managers and kitchen operators.
+                </p>
+                <div className="pt-2 space-y-2">
+                  <button
+                    onClick={async () => {
+                      await switchUserRole("admin");
+                    }}
+                    className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl transition uppercase tracking-wider cursor-pointer"
+                  >
+                    Upgrade Current Session to Admin
+                  </button>
+                  <button
+                    onClick={() => signOutUser()}
+                    className="w-full bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs py-2.5 px-4 rounded-xl transition uppercase tracking-wider cursor-pointer border border-stone-300"
+                  >
+                    Logout & Sign In as Admin
+                  </button>
+                </div>
+              </div>
+            )
+          ) : (
+            <AuthScreen />
+          )
+        )}
 
       </main>
 

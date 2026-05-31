@@ -1,266 +1,352 @@
 import React, { useState, useEffect } from "react";
-import { Database, Copy, Check, RefreshCw } from "lucide-react";
+import { useStore } from "../store";
+import { Database, Copy, Check, RefreshCw, Key, Link2, ShieldCheck, HelpCircle, Sparkles } from "lucide-react";
 
 export default function SupabaseSyncPanel() {
-  const [status, setStatus] = useState<{
-    isConfigured: boolean;
-    isConnected: boolean;
-    error: string | null;
-    url: string | null;
-    schemaSql: string;
-  } | null>(null);
+  const { 
+    isSupabaseActive, 
+    supabaseConfig, 
+    saveSupabaseConfig, 
+    localOnly, 
+    resetDatabase, 
+    isActionLoading,
+    categories,
+    foodItems,
+    orders,
+    reviews,
+    reloadCatalog
+  } = useStore();
 
-  const [loading, setLoading] = useState(true);
-  const [syncLoading, setSyncLoading] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [inputUrl, setInputUrl] = useState(supabaseConfig.url || "");
+  const [inputKey, setInputKey] = useState(supabaseConfig.key || "");
   const [copied, setCopied] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const fetchStatus = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch("/api/supabase/status");
-      const data = await res.json();
-      setStatus(data);
-    } catch (err: any) {
-      console.error("Failed to load Supabase integration status:", err);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    setInputUrl(supabaseConfig.url || "");
+    setInputKey(supabaseConfig.key || "");
+  }, [supabaseConfig]);
+
+  const handleSaveCredentials = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaveSuccess(false);
+    const ok = await saveSupabaseConfig(inputUrl.trim(), inputKey.trim());
+    if (ok) {
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+      await reloadCatalog();
     }
   };
 
-  useEffect(() => {
-    fetchStatus();
-  }, []);
+  const handleClearCredentials = async () => {
+    if (confirm("Disconnect live Supabase linkage and revert to simulated sandbox environment?")) {
+      await saveSupabaseConfig("", "");
+      setInputUrl("");
+      setInputKey("");
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+      await reloadCatalog();
+    }
+  };
+
+  const schemaSql = `-- ======================================================
+-- ISSA KITCHEN - FULL DATABASE SCHEMA BOOTSTRAP SQL
+-- Copy and run this inside your Supabase SQL Editor
+-- ======================================================
+
+-- 1. Enable UUID Extension if needed
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- 2. Categories Table
+CREATE TABLE IF NOT EXISTS "categories" (
+  "id" TEXT PRIMARY KEY,
+  "name" TEXT NOT NULL,
+  "slug" TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 3. Food Items Table
+CREATE TABLE IF NOT EXISTS "food_items" (
+  "id" TEXT PRIMARY KEY,
+  "categoryId" TEXT,
+  "name" TEXT NOT NULL,
+  "slug" TEXT NOT NULL,
+  "price" NUMERIC NOT NULL,
+  "image" TEXT NOT NULL,
+  "description" TEXT,
+  "calories" INTEGER,
+  "deliveryTime" TEXT,
+  "rating" NUMERIC NOT NULL DEFAULT 4.5,
+  "isPopular" BOOLEAN NOT NULL DEFAULT FALSE,
+  "isSpicy" BOOLEAN NOT NULL DEFAULT FALSE,
+  "isVegetarian" BOOLEAN NOT NULL DEFAULT FALSE,
+  "isFeatured" BOOLEAN NOT NULL DEFAULT FALSE,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 4. Users Profile Table (Public Mirror of Auth.users)
+CREATE TABLE IF NOT EXISTS "users" (
+  "id" TEXT PRIMARY KEY,
+  "name" TEXT NOT NULL,
+  "email" TEXT NOT NULL,
+  "phone" TEXT,
+  "role" TEXT NOT NULL DEFAULT 'customer',
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 5. Orders Table
+CREATE TABLE IF NOT EXISTS "orders" (
+  "id" TEXT PRIMARY KEY,
+  "orderNumber" TEXT NOT NULL,
+  "customerId" TEXT,
+  "customerName" TEXT NOT NULL,
+  "customerPhone" TEXT NOT NULL,
+  "customerEmail" TEXT NOT NULL,
+  "deliveryLocation" TEXT NOT NULL,
+  "deliveryAddress" TEXT NOT NULL,
+  "deliveryNotes" TEXT,
+  "paymentMethod" TEXT NOT NULL,
+  "totalAmount" NUMERIC NOT NULL,
+  "deliveryFee" NUMERIC NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'Pending',
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 6. Order Items Table
+CREATE TABLE IF NOT EXISTS "order_items" (
+  "id" TEXT PRIMARY KEY,
+  "orderId" TEXT,
+  "foodItemId" TEXT,
+  "foodItemName" TEXT,
+  "foodItemImage" TEXT,
+  "quantity" INTEGER NOT NULL DEFAULT 1,
+  "price" NUMERIC NOT NULL
+);
+
+-- 7. Reviews List Table
+CREATE TABLE IF NOT EXISTS "reviews" (
+  "id" TEXT PRIMARY KEY,
+  "customerId" TEXT,
+  "customerName" TEXT NOT NULL,
+  "foodItemId" TEXT NOT NULL,
+  "foodItemName" TEXT NOT NULL,
+  "rating" INTEGER NOT NULL,
+  "review" TEXT NOT NULL,
+  "isApproved" BOOLEAN NOT NULL DEFAULT TRUE,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 8. Customer Saved Addresses
+CREATE TABLE IF NOT EXISTS "addresses" (
+  "id" TEXT PRIMARY KEY,
+  "customerId" TEXT NOT NULL,
+  "location" TEXT NOT NULL,
+  "address" TEXT NOT NULL,
+  "notes" TEXT
+);`;
 
   const handleCopySql = () => {
-    if (!status?.schemaSql) return;
-    navigator.clipboard.writeText(status.schemaSql);
+    navigator.clipboard.writeText(schemaSql);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleSyncToCloud = async () => {
-    if (!confirm("Are you sure you want to push all current local orders, customers, reviews, and food items directly into Supabase? This will clear any conflicting records in the remote database tables.")) {
-      return;
-    }
-    try {
-      setSyncLoading(true);
-      setSyncResult(null);
-      const res = await fetch("/api/supabase/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" }
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setSyncResult({ success: true, message: data.message });
-        fetchStatus();
-      } else {
-        setSyncResult({ success: false, message: data.error || "Synchronizer failed" });
-      }
-    } catch (err: any) {
-      setSyncResult({ success: false, message: err.message || "Network request failed" });
-    } finally {
-      setSyncLoading(false);
-    }
-  };
-
-  if (loading && !status) {
-    return (
-      <div className="bg-white rounded-3xl border border-stone-200 p-12 text-center flex flex-col items-center justify-center space-y-4">
-        <RefreshCw className="w-8 h-8 text-amber-600 animate-spin" />
-        <p className="text-stone-500 font-sans text-xs">Polling cloud database cluster integration state...</p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6 text-left" id="panel-supabase-workspace">
       
-      {/* Cloud Setup Status Header widget */}
+      {/* 1. Connection Status Hero Card */}
       <div className="bg-white rounded-3xl border border-stone-200 shadow-sm p-6 space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-stone-150 pb-4">
           <div>
             <h3 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-              <Database className="w-5 h-5 text-amber-600" /> Supabase Connection Workspace
+              <Database className="w-5 h-5 text-amber-600 animate-pulse" /> Supabase Database Workspace
             </h3>
             <p className="text-stone-500 text-xs mt-0.5">
-              Connect your production-ready food ordering system directly to Supabase PostgreSQL Database.
+              Hook active cloud storage directly to enable real-time Vercel persistence and PostgreSQL synchronization.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={fetchStatus}
-              disabled={loading}
-              className="px-3.5 py-1.5 border border-stone-300 rounded-lg text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50 transition cursor-pointer flex items-center gap-1.5"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh Link
-            </button>
-          </div>
+          <button
+            onClick={reloadCatalog}
+            className="px-3.5 py-1.5 border border-stone-300 rounded-xl text-xs font-semibold text-stone-700 hover:bg-stone-50 transition cursor-pointer flex items-center gap-1.5"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Re-poll Database
+          </button>
         </div>
 
-        {/* Dynamic Status Grid indicator */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 space-y-2">
-            <span className="text-[10px] text-stone-400 font-black uppercase tracking-wider block">Credentials Status</span>
+            <span className="text-[10px] text-stone-400 font-black uppercase tracking-wider block">Connection Strategy</span>
             <div className="flex items-center gap-2">
-              {status?.isConfigured ? (
+              {isSupabaseActive ? (
                 <>
-                  <span className="w-2.5 h-2.5 bg-green-500 rounded-full inline-block" />
-                  <span className="text-sm font-bold text-green-700">Environment Configured</span>
-                </>
-              ) : (
-                <>
-                  <span className="w-2.5 h-2.5 bg-stone-300 rounded-full inline-block" />
-                  <span className="text-sm font-bold text-stone-500">Unconfigured (.env.example placeholders)</span>
-                </>
-              )}
-            </div>
-            <p className="text-[11px] text-stone-500 font-medium">
-              Credentials are loaded dynamically from <code className="bg-stone-150 px-1 py-0.5 rounded font-mono text-amber-800 text-[10px] select-all">SUPABASE_URL</code> and <code className="bg-stone-150 px-1 py-0.5 rounded font-mono text-amber-800 text-[10px] select-all">SUPABASE_ANON_KEY</code>.
-            </p>
-          </div>
-
-          <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 space-y-2">
-            <span className="text-[10px] text-stone-400 font-black uppercase tracking-wider block">Active Engine Status</span>
-            <div className="flex items-center gap-2">
-              {status?.isConnected ? (
-                <>
-                  <span className="w-2.5 h-2.5 bg-green-500 rounded-full inline-block animate-pulse" />
-                  <span className="text-sm font-bold text-green-700">🟢 Connected to Supabase Cloud Server</span>
+                  <span className="w-2.5 h-2.5 bg-green-500 rounded-full inline-block animate-ping" />
+                  <span className="text-sm font-bold text-green-700">🟢 Direct Supabase Connection (Live)</span>
                 </>
               ) : (
                 <>
                   <span className="w-2.5 h-2.5 bg-orange-400 rounded-full inline-block" />
-                  <span className="text-sm font-bold text-orange-700">⚪ Running Local Fallback (db.json)</span>
+                  <span className="text-sm font-bold text-orange-700">⚪ Sandbox Mock State (Offline)</span>
                 </>
               )}
             </div>
             <p className="text-[11px] text-stone-500 font-medium">
-              {status?.isConnected
-                ? "Excellent! System tables are responsive and synced directly to Supabase cloud storage."
-                : "The application is currently running automatically under high-fidelity sandbox database simulation."}
+              {isSupabaseActive 
+                ? "Excellent connection! Data is sync'd directly from the browser to your live cloud cluster."
+                : "Credentials missing. The application is running in an offline sandbox storing data in localStorage."}
             </p>
           </div>
-        </div>
 
-        {/* Database Endpoint URL showing */}
-        {status?.url && (
-          <div className="bg-stone-100/50 rounded-xl p-3 border border-stone-200 text-xs font-mono text-stone-600 flex items-center justify-between">
-            <div className="flex items-center gap-1.5 truncate">
-              <span className="text-[10px] text-stone-400 uppercase font-black">Cluster Endpoint:</span>
-              <span className="truncate select-all">{status.url}</span>
+          <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 space-y-2">
+            <span className="text-[10px] text-stone-400 font-black uppercase tracking-wider block">Live Schema Catalog</span>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-[10px] text-stone-500 list-none">
+              <li>• Categories: <strong className="text-stone-800">{categories.length}</strong></li>
+              <li>• Dishes: <strong className="text-stone-800">{foodItems.length}</strong></li>
+              <li>• Orders: <strong className="text-stone-800">{orders.length}</strong></li>
+              <li>• Reviews: <strong className="text-stone-800">{reviews.length}</strong></li>
             </div>
           </div>
-        )}
-
-        {/* Alert message if schema is not initialized */}
-        {status?.error && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-800 space-y-1.5">
-            <strong className="font-bold flex items-center gap-1">
-              ⚠️ DB SETUP REQUIRED: Schema tables missing
-            </strong>
-            <p className="leading-relaxed">
-              If your database url is correct but no tables exist yet, Supabase queries will fail until tables are created. 
-              Please copy the bootstrap SQL code below, navigate to your <a href="https://supabase.com" target="_blank" rel="noreferrer" className="underline font-black hover:text-amber-950">Supabase SQL Editor</a>, paste, and run <strong>"Run"</strong>.
-            </p>
-            <p className="font-mono text-[10px] bg-amber-100/40 p-2 rounded border border-amber-200/50 mt-1 select-all">
-              {status.error}
-            </p>
-          </div>
-        )}
+        </div>
       </div>
 
-      {/* Manual Synchronizer card */}
+      {/* 2. Setup Form & Real-time Seeder */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Table creation guides */}
-        <div className="lg:col-span-2 bg-white rounded-3xl border border-stone-200 shadow-sm p-6 space-y-4">
-          <div className="flex justify-between items-center border-b border-stone-150 pb-3">
+        {/* Credentials Form */}
+        <div className="lg:col-span-2 bg-white rounded-3xl border border-stone-200 p-6 shadow-sm space-y-4">
+          <div className="border-b border-stone-150 pb-3 flex justify-between items-center">
             <div>
-              <h4 className="font-bold text-stone-900 text-sm">Issa Kitchen Bootstrap Schema</h4>
-              <p className="text-[11px] text-stone-500">Run this SQL in Supabase dashboard to provision tables instantly.</p>
+              <h4 className="font-bold text-stone-900 text-sm">Cluster Connection Details</h4>
+              <p className="text-[11px] text-stone-500">Provide public api keys to establish persistent connectivity.</p>
             </div>
-            <button
-              onClick={handleCopySql}
-              className="p-1.5 border border-stone-255 hover:bg-stone-50 text-stone-750 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-green-600" /> Copied!
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5 text-stone-500" /> Copy SQL
-                </>
-              )}
-            </button>
+            {isSupabaseActive && (
+              <button 
+                onClick={handleClearCredentials}
+                className="text-[10px] text-red-600 hover:text-red-700 font-bold uppercase transition cursor-pointer"
+              >
+                Disconnect Connection
+              </button>
+            )}
           </div>
 
-          <div className="relative">
-            <pre className="bg-stone-900 rounded-2xl p-4 font-mono text-[10px] text-stone-200 overflow-x-auto h-72 max-h-72 border border-stone-800 leading-relaxed select-all">
-              {status?.schemaSql}
-            </pre>
-          </div>
+          {saveSuccess && (
+            <div className="bg-green-50 border border-green-200 text-green-800 text-xs p-3 rounded-xl font-bold flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4" /> Link connections updated successfully!
+            </div>
+          )}
+
+          <form onSubmit={handleSaveCredentials} className="space-y-4 text-left">
+            <div className="space-y-1">
+              <label className="text-xs text-stone-600 font-bold block flex items-center gap-1">
+                <Link2 className="w-3.5 h-3.5 text-stone-400" /> Supabase Project URL
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="https://your-project-id.supabase.co"
+                value={inputUrl}
+                onChange={(e) => setInputUrl(e.target.value)}
+                className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2.5 text-xs text-stone-900 font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs text-stone-600 font-bold block flex items-center gap-1">
+                <Key className="w-3.5 h-3.5 text-stone-400" /> Supabase Public Anon Key
+              </label>
+              <textarea
+                required
+                rows={2}
+                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                value={inputKey}
+                onChange={(e) => setInputKey(e.target.value)}
+                className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2.5 text-xs text-stone-900 font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs uppercase px-4 py-2.5 rounded-xl cursor-pointer transition shadow flex items-center gap-1.5"
+            >
+              <span>Verify & Connect Live Database</span>
+            </button>
+          </form>
         </div>
 
-        {/* One Click Syncer Operations bar */}
-        <div className="lg:col-span-1 bg-gradient-to-br from-stone-800 to-stone-950 rounded-3xl border border-stone-900 shadow-lg p-6 text-white flex flex-col justify-between">
-          <div className="space-y-4 text-left">
-            <div className="bg-amber-600/20 text-amber-400 border border-amber-500/20 rounded-xl px-3 py-1 text-[10px] font-black uppercase tracking-widest inline-block">
-              One-Click Migrator
+        {/* Cloud Seeder */}
+        <div className="lg:col-span-1 bg-gradient-to-br from-stone-850 to-stone-950 rounded-3xl border border-stone-900 p-6 shadow-xl text-white flex flex-col justify-between">
+          <div className="space-y-3">
+            <div className="bg-amber-600/35 text-amber-400 border border-amber-500/20 rounded-lg px-2.5 py-1 text-[9px] font-black uppercase tracking-widest inline-block">
+              Schema Seeder
             </div>
-            <h4 className="text-base font-extrabold tracking-tight font-sans text-amber-500">
-              Local Data Synchronizer
+            <h4 className="text-base font-black tracking-tight font-sans text-amber-500">
+              One-Click Seed Setup
             </h4>
             <p className="text-stone-300 text-[11px] leading-relaxed">
-              Already have custom orders, food categories, user status, and content-analyzed reviews stored locally in your workspace simulated session?
+              Connect your database key first, register tables using the bootstrap script, then click below to fully migrate Issa Kitchen initial seed dishes, categories, and reviews.
             </p>
-            <p className="text-stone-300 text-[11px] leading-relaxed">
-              Click the synchronizer below to transmit your entire simulated state directly into the connected cloud SQL tables instantly.
+            <p className="text-stone-400 text-[10px] leading-relaxed italic">
+              *Warning: This wipes existing records on connected tables to prevent conflicts.
             </p>
           </div>
 
-          <div className="space-y-4 pt-6">
-            {syncResult && (
-              <div className={`p-3 rounded-xl text-xs border leading-relaxed ${
-                syncResult.success 
-                  ? "bg-green-950/40 border-green-800 text-green-300"
-                  : "bg-red-950/40 border-red-800 text-red-300"
-              }`}>
-                <strong>{syncResult.success ? "🟢 Synchronization success!" : "❌ Migration failed"}</strong>
-                <p className="text-[10px] mt-1 text-stone-200">{syncResult.message}</p>
-              </div>
-            )}
-
+          <div className="pt-6 space-y-3">
             <button
-              onClick={handleSyncToCloud}
-              disabled={syncLoading || !status?.isConnected}
+              type="button"
+              disabled={isActionLoading || !isSupabaseActive}
+              onClick={resetDatabase}
               className={`w-full py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-2 border ${
-                status?.isConnected
-                  ? "bg-amber-600 hover:bg-amber-500 border-amber-700 text-white"
-                  : "bg-stone-800 border-stone-700 text-stone-500 cursor-not-allowed"
+                isSupabaseActive 
+                  ? "bg-amber-600 hover:bg-amber-500 border-amber-700 text-white shadow-md hover:scale-[1.02] active:scale-[0.98]"
+                  : "bg-stone-800 border-stone-800 text-stone-500 cursor-not-allowed"
               }`}
             >
-              {syncLoading ? (
+              {isActionLoading ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin" /> Synchronizing...
+                  <RefreshCw className="w-4 h-4 animate-spin" /> Provisioning...
                 </>
               ) : (
                 <>
-                  <Database className="w-4 h-4" /> Push local data to cloud
+                  <Sparkles className="w-4 h-4" /> Reset & Seed Supabase
                 </>
               )}
             </button>
-            
-            {!status?.isConnected && (
-              <span className="text-[10px] text-stone-500 text-center block italic">
-                (Connect your Supabase environment credentials to enable mapping synchronizations)
+            {!isSupabaseActive && (
+              <span className="text-[9px] text-stone-500 text-center block leading-tight">
+                (Verify credentials setup on the left to activate seeders)
               </span>
             )}
           </div>
         </div>
 
+      </div>
+
+      {/* 3. Schema Bootstrap Instructions */}
+      <div className="bg-white rounded-3xl border border-stone-200 shadow-sm p-6 space-y-4">
+        <div className="flex justify-between items-center border-b border-stone-150 pb-3">
+          <div>
+            <h4 className="font-bold text-stone-900 text-sm">PostgreSQL Schema Bootstrap Commands</h4>
+            <p className="text-[11px] text-stone-500">Run this complete SQL bootstrap script inside your Supabase dashboard editor.</p>
+          </div>
+          <button
+            onClick={handleCopySql}
+            className="p-1.5 border border-stone-200 hover:bg-stone-50 text-stone-700 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+          >
+            {copied ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-green-600" /> Copied Script!
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5 text-stone-500" /> Copy SQL Bootstrap
+              </>
+            )}
+          </button>
+        </div>
+
+        <pre className="bg-stone-900 rounded-2xl p-4 font-mono text-[10px] text-stone-300 overflow-x-auto h-72 max-h-72 border border-stone-800 leading-relaxed select-all text-left">
+          {schemaSql}
+        </pre>
       </div>
 
     </div>

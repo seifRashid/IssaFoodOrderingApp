@@ -10,7 +10,8 @@ export default function Header() {
     setActiveTab, 
     getCartTotals, 
     isActionLoading,
-    resetDatabase 
+    resetDatabase,
+    signOutUser
   } = useStore();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -155,15 +156,29 @@ export default function Header() {
             )}
 
             {/* User Greeting Segment */}
-            <div className="flex items-center gap-2 border-l border-stone-200 pl-4">
-              <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center border border-amber-200">
-                <User className="w-4 h-4 text-amber-800" />
+            {user ? (
+              <div className="flex items-center gap-3 border-l border-stone-200 pl-4">
+                <div className="text-left leading-none">
+                  <span className="text-[10px] text-stone-400 font-extrabold uppercase block">{user.role}</span>
+                  <span className="text-xs font-bold text-stone-855 block truncate max-w-28 mt-0.5">{user.name}</span>
+                </div>
+                <button
+                  onClick={() => signOutUser()}
+                  className="bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-250 hover:text-stone-900 text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition cursor-pointer"
+                >
+                  Sign Out
+                </button>
               </div>
-              <div className="text-left leading-none">
-                <span className="text-xs text-stone-500 block">Logged as</span>
-                <span className="text-xs font-bold text-stone-800 block truncate max-w-28">{user?.name}</span>
+            ) : (
+              <div className="border-l border-stone-200 pl-4">
+                <button
+                  onClick={() => setActiveTab("dashboard")}
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-black uppercase tracking-wider px-3.5 py-2 rounded-xl transition cursor-pointer"
+                >
+                  Sign In
+                </button>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Mobile Right Zone (Trigger / Role indicator) */}
@@ -205,11 +220,13 @@ export default function Header() {
           <div className="flex justify-between items-center mb-3 pb-2 border-b border-stone-100">
             <div className="flex items-center gap-1.5 text-xs text-stone-600">
               <User className="w-3.5 h-3.5 text-amber-600" />
-              <span>Hello, <strong>{user?.name}</strong></span>
+              <span>Hello, <strong>{user?.name || "Guest"}</strong></span>
             </div>
-            <span className="inline-block bg-stone-100 text-stone-850 text-[10px] font-mono px-2 py-0.5 rounded font-black uppercase">
-              {user?.role} Mode
-            </span>
+            {user && (
+              <span className="inline-block bg-stone-100 text-stone-850 text-[10px] font-mono px-2 py-0.5 rounded font-black uppercase">
+                {user.role} Mode
+              </span>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-2">
