@@ -9,7 +9,8 @@ import CustomerDashboard from "./components/CustomerDashboard";
 import AdminDashboard from "./components/AdminDashboard";
 import { 
   ChefHat, Clock, Compass, Activity, ArrowRight, ShieldCheck, 
-  MapPin, Star, Sparkles, MessageCircle, AlertCircle, ShoppingBag 
+  MapPin, Star, Sparkles, MessageCircle, AlertCircle, ShoppingBag,
+  Database
 } from "lucide-react";
 
 function AppContent() {
@@ -22,7 +23,11 @@ function AppContent() {
     reviews, 
     orders,
     submitReview,
-    isActionLoading 
+    isActionLoading,
+    user,
+    switchUserRole,
+    adminSubTab,
+    setAdminSubTab
   } = useStore();
 
   // Testimonial cards state
@@ -38,6 +43,17 @@ function AppContent() {
   const [revText, setRevText] = useState("");
   const [revAIStatus, setRevAIStatus] = useState<string | null>(null);
   const [revSuccess, setRevSuccess] = useState(false);
+
+  // Database / Sync Helper state
+  const [showDevAssistant, setShowDevAssistant] = useState(true);
+
+  const handleAdminJump = async () => {
+    if (user?.role !== "admin") {
+      await switchUserRole("admin");
+    }
+    setAdminSubTab("supabase");
+    setActiveTab("admin-dashboard");
+  };
 
   const popularDishes = useMemo(() => {
     return foodItems.filter(f => f.isPopular).slice(0, 3);
@@ -489,6 +505,81 @@ function AppContent() {
 
       {/* Footer support credits info */}
       <Footer />
+
+      {/* 🛠️ Floating Developer Integration & Database Sync Assistant */}
+      <div className="fixed bottom-6 left-6 z-50 max-w-sm font-sans" id="supabase-dev-integration-hub">
+        {showDevAssistant ? (
+          <div className="bg-stone-900 border border-amber-500/40 text-stone-100 rounded-3xl p-5 shadow-2xl space-y-4 text-left">
+            <div className="flex justify-between items-start">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-amber-600/30 text-amber-400 rounded-lg">
+                  <Database className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white tracking-tight">Supabase Assistant</h4>
+                  <span className="text-[10px] text-amber-500 font-mono font-bold uppercase tracking-wider">Cloud Synchronizer</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDevAssistant(false)}
+                className="text-stone-400 hover:text-white p-1 rounded-md hover:bg-stone-800 transition cursor-pointer text-xs"
+              >
+                ✕ Hide
+              </button>
+            </div>
+
+            <p className="text-stone-300 text-[11px] leading-relaxed">
+              Now that you've configured your credentials, use this helper to jump directly into the <strong>Database Sync</strong> dashboard, where you can provision the SQL schemas and sync your local catalog live!
+            </p>
+
+            <div className="bg-stone-850 border border-stone-800 p-2.5 rounded-xl flex items-center justify-between text-xs font-mono">
+              <span className="text-stone-400">Current Role:</span>
+              <span className="text-amber-400 font-extrabold uppercase bg-amber-950/40 px-2.5 py-0.5 rounded border border-amber-900/30">
+                {user?.role}
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              <button
+                onClick={handleAdminJump}
+                className="w-full bg-amber-600 hover:bg-amber-500 hover:scale-[1.01] text-white py-2.5 px-4 rounded-xl text-xs font-black uppercase tracking-wider shadow-md transition cursor-pointer flex items-center justify-center gap-1.5 border border-amber-500"
+              >
+                <Sparkles className="w-4 h-4 animate-pulse" />
+                Open Database Sync Panel
+              </button>
+              
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    const nextRole = user?.role === "admin" ? "customer" : "admin";
+                    await switchUserRole(nextRole);
+                  }}
+                  className="flex-1 bg-stone-800 hover:bg-stone-750 text-stone-300 py-1.5 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer text-center"
+                >
+                  Toggle Role
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab("admin-dashboard");
+                    setAdminSubTab("analytics");
+                  }}
+                  className="flex-1 bg-stone-800 hover:bg-stone-750 text-stone-300 py-1.5 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer text-center"
+                >
+                  Admin Control
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowDevAssistant(true)}
+            className="bg-stone-900 border border-amber-500/40 text-amber-500 hover:text-amber-400 font-bold hover:scale-105 active:scale-95 text-xs py-3 px-4 rounded-full shadow-2xl flex items-center gap-2 transition cursor-pointer"
+          >
+            <Database className="w-4 h-4 animate-bounce" />
+            <span>Show Supabase Assistant</span>
+          </button>
+        )}
+      </div>
 
     </div>
   );

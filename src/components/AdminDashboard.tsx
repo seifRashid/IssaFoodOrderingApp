@@ -4,8 +4,10 @@ import { OrderStatus, FoodItem, Category } from "../types";
 import { 
   TrendingUp, DollarSign, Users, ShoppingCart, Activity, 
   Trash2, Edit, Plus, Check, X, ShieldAlert, Star, Coffee, 
-  Tag, ListOrdered, Calendar, UserCheck, RefreshCw, BarChart3, ChevronDown
+  Tag, ListOrdered, Calendar, UserCheck, RefreshCw, BarChart3, ChevronDown,
+  Database, Copy
 } from "lucide-react";
+import SupabaseSyncPanel from "./SupabaseSyncPanel";
 
 export default function AdminDashboard() {
   const {
@@ -24,12 +26,10 @@ export default function AdminDashboard() {
     updateOrderStatus,
     moderateReview,
     deleteReview,
-    reloadCatalog
+    reloadCatalog,
+    adminSubTab,
+    setAdminSubTab
   } = useStore();
-
-  const [adminSubTab, setAdminSubTab] = useState<
-    "analytics" | "orders" | "foods" | "categories" | "customers" | "reviews"
-  >("analytics");
 
   // Filter query triggers
   const [orderQuery, setOrderQuery] = useState("");
@@ -290,6 +290,14 @@ export default function AdminDashboard() {
           }`}
         >
           <Star className="w-3.5 h-3.5" /> Reviews Mod ({reviews.length})
+        </button>
+        <button
+          onClick={() => setAdminSubTab("supabase")}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold tracking-wider uppercase transition cursor-pointer flex items-center gap-1.5 ${
+            adminSubTab === "supabase" ? "bg-white text-stone-900 shadow-sm" : "text-stone-500 hover:text-stone-800"
+          }`}
+        >
+          <Database className="w-3.5 h-3.5" /> Database Sync
         </button>
       </div>
 
@@ -933,6 +941,11 @@ export default function AdminDashboard() {
             )}
           </div>
         </div>
+      )}
+      
+      {/* Tab 3.7: Supabase Sync Integration workspace */}
+      {adminSubTab === "supabase" && (
+        <SupabaseSyncPanel />
       )}
 
     </div>

@@ -14,6 +14,8 @@ interface StoreContextType {
   // Navigation / Views
   activeTab: string; // 'home' | 'menu' | 'reviews' | 'dashboard' | 'admin-dashboard' | 'checkout' | 'track-order'
   setActiveTab: (tab: string) => void;
+  adminSubTab: "analytics" | "orders" | "foods" | "categories" | "customers" | "reviews" | "supabase";
+  setAdminSubTab: (tab: "analytics" | "orders" | "foods" | "categories" | "customers" | "reviews" | "supabase") => void;
   selectedFoodId: string | null;
   setSelectedFoodId: (id: string | null) => void;
   selectedOrderId: string | null;
@@ -89,6 +91,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   // Navigation
   const [activeTab, setActiveTabState] = useState<string>("home");
+  const [adminSubTab, setAdminSubTab] = useState<"analytics" | "orders" | "foods" | "categories" | "customers" | "reviews" | "supabase">("analytics");
   const [selectedFoodId, setSelectedFoodId] = useState<string | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
@@ -584,6 +587,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         
         activeTab,
         setActiveTab,
+        adminSubTab,
+        setAdminSubTab,
         selectedFoodId,
         setSelectedFoodId,
         selectedOrderId,
