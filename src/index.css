@@ -1,0 +1,112 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", var(--font-sans);
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Let's map standard color variables corresponding to the "Vibrant Palette" */
+  /* Primary Vibrant Orange: #FF6B35 */
+  /* Secondary Cream/Peach: #F7C59F */
+  /* Peach Off-white Background: #FFF9F5 */
+  /* Deep Ink: #1A1A1A */
+  /* Pure White: #FFFFFF */
+
+  /* Overriding Amber tones with the Vibrant Orange family */
+  --color-amber-50: #FFF9F5;
+  --color-amber-100: #FFEFE5;
+  --color-amber-200: #FFDFCC;
+  --color-amber-300: #FFBF99;
+  --color-amber-400: #FFA066;
+  --color-amber-500: #FF8033;
+  --color-amber-600: #FF6B35; /* Vital Primary Accent */
+  --color-amber-700: #E6551F;
+  --color-amber-800: #CC4414;
+  --color-amber-900: #B3370B;
+  --color-amber-950: #120D0C;
+
+  /* Overriding Orange tones similarly for full support */
+  --color-orange-50: #FFF9F5;
+  --color-orange-100: #FFEFE5;
+  --color-orange-200: #FFDFCC;
+  --color-orange-300: #FFBF99;
+  --color-orange-400: #FFA066;
+  --color-orange-500: #FF8033;
+  --color-orange-600: #FF6B35;
+  --color-orange-700: #E6551F;
+  --color-orange-800: #CC4414;
+  --color-orange-900: #1A1A1A;
+
+  /* Overriding Stone tones as they serve as the page base background (bg-stone-50) and primary text colors (text-stone-900) */
+  --color-stone-50: #FFF9F5;   /* The soft elegant peach/cream page background */
+  --color-stone-100: #FFEFE5;  /* Subtle panel border/background */
+  --color-stone-150: #FFDFCC;
+  --color-stone-200: #FFD2B8;
+  --color-stone-250: #FFC099;
+  --color-stone-300: #F7C59F;  /* Secondary color */
+  --color-stone-400: #E0AB86;
+  --color-stone-500: #7A5C47;
+  --color-stone-600: #5F4535;
+  --color-stone-700: #402E23;
+  --color-stone-800: #291E18;
+  --color-stone-850: #1F1511;
+  --color-stone-900: #1A1A1A;  /* Deep slate ink text */
+
+  /* Overriding slate as well if any is used for high contrast */
+  --color-slate-50: #FFF9F5;
+  --color-slate-100: #FFEFE5;
+  --color-slate-200: #FFDFCC;
+  --color-slate-350: #FFA066;
+  --color-slate-400: #FF8033;
+  --color-slate-500: #FF6B35;
+  --color-slate-600: #CC4414;
+  --color-slate-700: #B3370B;
+  --color-slate-800: #291E18;
+  --color-slate-900: #1A1A1A;
+}
+
+/* Fallback base styles for full accessibility and aesthetic pairing */
+html, body {
+  background-color: #FFF9F5;
+  color: #1A1A1A;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom design scrollbars for modern seamless desktop preview */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* Subtle warmth shadows inspired by the design HTML */
+.shadow-brand-sm {
+  box-shadow: 0 1px 2px 0 rgba(255, 107, 53, 0.05);
+}
+
+.shadow-brand-md {
+  box-shadow: 0 4px 6px -1px rgba(255, 107, 53, 0.05), 0 2px 4px -2px rgba(255, 107, 53, 0.05);
+}
+
+.shadow-brand-lg {
+  box-shadow: 0 10px 15px -3px rgba(255, 107, 53, 0.06), 0 4px 6px -4px rgba(255, 107, 53, 0.06);
+}
+
+.shadow-brand-xl {
+  box-shadow: 0 20px 25px -5px rgba(255, 107, 53, 0.08), 0 8px 10px -6px rgba(255, 107, 53, 0.08);
+}
+

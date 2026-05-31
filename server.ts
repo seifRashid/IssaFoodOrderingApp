@@ -1,0 +1,891 @@
+import express from "express";
+import path from "path";
+import fs from "fs";
+import { createServer as createViteServer } from "vite";
+import { GoogleGenAI } from "@google/genai";
+import dns from "dns";
+
+// Fix Node 17+ localhost address resolution preference
+dns.setDefaultResultOrder("ipv4first");
+
+const app = express();
+const PORT = 3000;
+const DB_FILE = path.join(process.cwd(), "db.json");
+
+app.use(express.json());
+
+// Initialize Gemini API client lazily and safely
+let ai: GoogleGenAI | null = null;
+function getGeminiClient(): GoogleGenAI | null {
+  if (!ai) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (apiKey && apiKey !== "MY_GEMINI_API_KEY") {
+      try {
+        ai = new GoogleGenAI({
+          apiKey: apiKey,
+          httpOptions: {
+            headers: {
+              "User-Agent": "aistudio-build",
+            },
+          },
+        });
+      } catch (e) {
+        console.error("Failed to initialize GoogleGenAI client:", e);
+      }
+    }
+  }
+  return ai;
+}
+
+// ==========================================
+// DATABASE SETUP & SEED DATA
+// ==========================================
+
+const defaultCategories = [
+  { id: "cat-1", name: "Breakfast", slug: "breakfast", createdAt: new Date().toISOString() },
+  { id: "cat-2", name: "Lunch", slug: "lunch", createdAt: new Date().toISOString() },
+  { id: "cat-3", name: "Dinner", slug: "dinner", createdAt: new Date().toISOString() },
+  { id: "cat-4", name: "Drinks", slug: "drinks", createdAt: new Date().toISOString() },
+  { id: "cat-5", name: "Snacks", slug: "snacks", createdAt: new Date().toISOString() },
+  { id: "cat-6", name: "Fast Food", slug: "fast-food", createdAt: new Date().toISOString() },
+  { id: "cat-7", name: "Desserts", slug: "desserts", createdAt: new Date().toISOString() },
+];
+
+const defaultFoodItems = [
+  {
+    id: "food-1",
+    categoryId: "cat-1",
+    name: "Classic Fluffy Pancakes",
+    slug: "classic-fluffy-pancakes",
+    description: "Stack of fluffy homemade buttermilk pancakes served with rich maple syrup, salted butter, and fresh seasonal berries.",
+    price: 8.50,
+    image: "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?auto=format&fit=crop&q=80&w=600",
+    preparationTime: 10,
+    isFeatured: true,
+    isPopular: true,
+    isAvailable: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "food-2",
+    categoryId: "cat-1",
+    name: "Poached Egg Avocado Toast",
+    slug: "poached-egg-avocado-toast",
+    description: "Toasted country sourdough topped with cream cheese, fresh crushed avocado, chili flakes, sea salt, and a perfect runny poached egg.",
+    price: 9.50,
+    image: "https://images.unsplash.com/photo-1541532713592-79a0317b6b77?auto=format&fit=crop&q=80&w=600",
+    preparationTime: 8,
+    isFeatured: true,
+    isPopular: false,
+    isAvailable: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "food-3",
+    categoryId: "cat-2",
+    name: "Crispy Spicy Chicken Burger",
+    slug: "crispy-spicy-chicken-burger",
+    description: "Perfectly seasoned hand-breaded golden chicken breast coated in buffalo glaze, spicy sweet garlic aioli, lettuce, and sour pickles on a toasted brioche bun. Served with sea salt fries.",
+    price: 12.50,
+    image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&q=80&w=600",
+    preparationTime: 15,
+    isFeatured: false,
+    isPopular: true,
+    isAvailable: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "food-4",
+    categoryId: "cat-2",
+    name: "Feta Mediterranean Salad",
+    slug: "feta-mediterranean-salad",
+    description: "Crisp chopped romaine lettuce, crunchy cucumbers, ripe cherry tomatoes, Kalamata olives, creamy sheep's milk feta cheese, red onion, tossed in our signature greek lemon-herb vinaigrette.",
+    price: 10.00,
+    image: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&q=80&w=600",
+    preparationTime: 10,
+    isFeatured: false,
+    isPopular: false,
+    isAvailable: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "food-5",
+    categoryId: "cat-3",
+    name: "Flame-Grilled Ribeye Steak",
+    slug: "flame-grilled-ribeye-steak",
+    description: "A premium 12oz tender grain-fed ribeye steak grilled to temperature, glazed with homemade herb garlic butter. Served with roasted asparagus and creamy gold mashed potatoes.",
+    price: 24.00,
+    image: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=600",
+    preparationTime: 20,
+    isFeatured: true,
+    isPopular: true,
+    isAvailable: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "food-6",
+    categoryId: "cat-3",
+    name: "Creamy Garlic Chicken Fettuccine",
+    slug: "creamy-garlic-chicken-fettuccine",
+    description: "Fettuccine pasta tossed in a rich, velvety garlic parmesan cream sauce, loaded with tender flame-grilled sliced chicken breast and sprinkled with fresh chopped Italian parsley.",
+    price: 16.50,
+    image: "https://images.unsplash.com/photo-1645112411341-6c4fd023714a?auto=format&fit=crop&q=80&w=600",
+    preparationTime: 15,
+    isFeatured: false,
+    isPopular: false,
+    isAvailable: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "food-7",
+    categoryId: "cat-4",
+    name: "Fresh Tropical Mango Smoothie",
+    slug: "fresh-tropical-mango-smoothie",
+    description: "Sweet and beautifully refreshing blend of fresh Kent mango pulp, creamy Greek yogurt, organic honey, and a touch of coconut water.",
+    price: 4.50,
+    image: "https://images.unsplash.com/photo-1553530666-ba11a7da3888?auto=format&fit=crop&q=80&w=600",
+    preparationTime: 5,
+    isFeatured: false,
+    isPopular: true,
+    isAvailable: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "food-8",
+    categoryId: "cat-4",
+    name: "Iced Caramel Macchiato",
+    slug: "iced-caramel-macchiato",
+    description: "Chilled organic whole milk infused with sweet vanilla bean syrup, topped with bold shots of dark espresso, finished with a heavy swirl of buttery house-made caramel drizzle.",
+    price: 5.00,
+    image: "https://images.unsplash.com/photo-1595981267035-7b04ca84a82d?auto=format&fit=crop&q=80&w=600",
+    preparationTime: 5,
+    isFeatured: false,
+    isPopular: false,
+    isAvailable: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "food-9",
+    categoryId: "cat-5",
+    name: "Mozzarella Mudballs (Cheese Sticks)",
+    slug: "mozzarella-mudballs",
+    description: "Hand-rolled premium whole-milk mozzarella logs coated in seasoned Italian breadcrumbs, fried golden brown, served with a cup of warm zesty marinara dipping sauce.",
+    price: 6.50,
+    image: "https://images.unsplash.com/photo-1531749668029-2db88e4b76ce?auto=format&fit=crop&q=80&w=600",
+    preparationTime: 7,
+    isFeatured: false,
+    isPopular: true,
+    isAvailable: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "food-10",
+    categoryId: "cat-6",
+    name: "Ultimate Loaded Nachos",
+    slug: "ultimate-loaded-nachos",
+    description: "Crispy freshly-fried white corn tortilla chips piled high with melted cheddar-jack, slow-simmered black beans, fresh house-made pico de gallo, ripe guacamole, and cool sour cream.",
+    price: 11.00,
+    image: "https://images.unsplash.com/photo-1513456852971-30c0b8199d4d?auto=format&fit=crop&q=80&w=600",
+    preparationTime: 10,
+    isFeatured: false,
+    isPopular: true,
+    isAvailable: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "food-11",
+    categoryId: "cat-6",
+    name: "Pepperoni Feast Pizza",
+    slug: "pepperoni-feast-pizza",
+    description: "Twelve-inch hand-stretched personal dough, topped with an extra-generous layering of spicy pepperoni slices, whole-milk shredded mozzarella, and our signature slow-simmered herb pizza sauce.",
+    price: 14.50,
+    image: "https://images.unsplash.com/photo-1628840042765-356cda07504e?auto=format&fit=crop&q=80&w=600",
+    preparationTime: 12,
+    isFeatured: true,
+    isPopular: false,
+    isAvailable: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "food-12",
+    categoryId: "cat-7",
+    name: "Warm Chocolate Fudge Lava Cake",
+    slug: "warm-chocolate-fudge-lava-cake",
+    description: "Rich, decadent chocolate sponge cake with a warm molten chocolate core that flows beautifully. Served with a premium scoop of vanilla bean ice cream.",
+    price: 7.50,
+    image: "https://images.unsplash.com/photo-1606313564200-e75d5e30476c?auto=format&fit=crop&q=80&w=600",
+    preparationTime: 10,
+    isFeatured: true,
+    isPopular: false,
+    isAvailable: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "food-13",
+    categoryId: "cat-7",
+    name: "Classic New York Strawberry Cheesecake",
+    slug: "classic-new-york-cheesecake",
+    description: "Velvety smooth, baked New York-style cream cheese filling on an organic buttery graham cracker crust, finished with a luscious sweet strawberry compote glaze.",
+    price: 8.00,
+    image: "https://images.unsplash.com/photo-1524351199679-46cddf530c04?auto=format&fit=crop&q=80&w=600",
+    preparationTime: 5,
+    isFeatured: false,
+    isPopular: true,
+    isAvailable: true,
+    createdAt: new Date().toISOString(),
+  },
+];
+
+const defaultUsers = [
+  { id: "usr-admin", name: "Chef Issa", email: "issa@example.com", phone: "+254 711 000000", role: "admin", createdAt: new Date().toISOString() },
+  { id: "usr-customer", name: "John Doe", email: "john@example.com", phone: "+254 722 123456", role: "customer", createdAt: new Date().toISOString() },
+];
+
+const defaultReviews = [
+  {
+    id: "rev-1",
+    customerId: "usr-customer",
+    customerName: "John Doe",
+    foodItemId: "food-1",
+    foodItemName: "Classic Fluffy Pancakes",
+    rating: 5,
+    review: "These pancakes are incredibly soft and fluffy! The maple syrup and fresh berries make it the perfect morning treat. Highly recommend Issa Kitchen!",
+    isApproved: true,
+    createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: "rev-2",
+    customerId: "usr-customer",
+    customerName: "John Doe",
+    foodItemId: "food-5",
+    foodItemName: "Flame-Grilled Ribeye Steak",
+    rating: 5,
+    review: "Absolutely tender and grilled to perfection. The garlic herb butter glaze elevates it completely. Will definitely order this dinner again!",
+    isApproved: true,
+    createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+];
+
+const defaultOrders = [
+  {
+    id: "ord-1",
+    orderNumber: "IK-1001",
+    customerId: "usr-customer",
+    customerName: "John Doe",
+    customerPhone: "+254 722 123456",
+    customerEmail: "john@example.com",
+    deliveryLocation: "Kilimani Estate",
+    deliveryAddress: "Yaya Center Area, Block B Flat 4A",
+    deliveryNotes: "Call when arriving at the gate, please keep it warm.",
+    paymentMethod: "M-Pesa" as const,
+    totalAmount: 29.50,
+    deliveryFee: 3.00,
+    status: "Delivered" as string,
+    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: "ord-2",
+    orderNumber: "IK-1002",
+    customerId: "usr-customer",
+    customerName: "John Doe",
+    customerPhone: "+254 722 123456",
+    customerEmail: "john@example.com",
+    deliveryLocation: "Westlands",
+    deliveryAddress: "Raphta Road, Villa Marina Apt 12",
+    deliveryNotes: "Please leave with the security guard at reception.",
+    paymentMethod: "Card Payments" as const,
+    totalAmount: 17.50,
+    deliveryFee: 4.00,
+    status: "Preparing" as string,
+    createdAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(), // 10 mins ago
+  }
+];
+
+const defaultOrderItems = [
+  { id: "item-1", orderId: "ord-1", foodItemId: "food-1", foodItemName: "Classic Fluffy Pancakes", foodItemImage: "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?auto=format&fit=crop&q=80&w=600", quantity: 2, price: 8.50 },
+  { id: "item-2", orderId: "ord-1", foodItemId: "food-2", foodItemName: "Poached Egg Avocado Toast", foodItemImage: "https://images.unsplash.com/photo-1541532713592-79a0317b6b77?auto=format&fit=crop&q=80&w=600", quantity: 1, price: 9.50 },
+  { id: "item-3", orderId: "ord-2", foodItemId: "food-3", foodItemName: "Crispy Spicy Chicken Burger", foodItemImage: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&q=80&w=600", quantity: 1, price: 12.50 },
+];
+
+const defaultAddresses = [
+  { id: "addr-1", customerId: "usr-customer", location: "Kilimani Estate", address: "Yaya Center Area, Block B Flat 4A", notes: "Call when arriving at the gate, please keep it warm." },
+  { id: "addr-2", customerId: "usr-customer", location: "Westlands", address: "Raphta Road, Villa Marina Apt 12", notes: "Please leave with the security guard at reception." }
+];
+
+interface DBState {
+  categories: typeof defaultCategories;
+  foodItems: typeof defaultFoodItems;
+  users: typeof defaultUsers;
+  reviews: typeof defaultReviews;
+  orders: typeof defaultOrders;
+  orderItems: typeof defaultOrderItems;
+  addresses: typeof defaultAddresses;
+  activeSessionUserId: string;
+}
+
+const initialDb: DBState = {
+  categories: defaultCategories,
+  foodItems: defaultFoodItems,
+  users: defaultUsers,
+  reviews: defaultReviews,
+  orders: defaultOrders,
+  orderItems: defaultOrderItems,
+  addresses: defaultAddresses,
+  activeSessionUserId: "usr-customer", // Start as John Doe Customer
+};
+
+// Help load & save DB safely
+function loadDb(): DBState {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const data = fs.readFileSync(DB_FILE, "utf-8");
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error("Failed to load db.json, using defaults.", e);
+  }
+  saveDb(initialDb);
+  return initialDb;
+}
+
+function saveDb(db: DBState): boolean {
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
+    return true;
+  } catch (e) {
+    console.error("Failed to write db.json", e);
+    return false;
+  }
+}
+
+// ==========================================
+// API CONTROLLERS
+// ==========================================
+
+// Global context DB reference
+let DB = loadDb();
+
+// 1. Session & Auth API
+app.get("/api/auth/session", (req, res) => {
+  const user = DB.users.find(u => u.id === DB.activeSessionUserId);
+  if (!user) {
+    return res.status(404).json({ error: "No active session user" });
+  }
+  res.json(user);
+});
+
+app.post("/api/auth/switch-role", (req, res) => {
+  const { userId } = req.body;
+  const user = DB.users.find(u => u.id === userId);
+  if (!user) {
+    return res.status(404).json({ error: "User not found" });
+  }
+  DB.activeSessionUserId = userId;
+  saveDb(DB);
+  res.json({ success: true, user });
+});
+
+app.post("/api/auth/login", (req, res) => {
+  const { email, password } = req.body; // In high simulated environment, allow matching by email directly
+  const user = DB.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  if (!user) {
+    return res.status(401).json({ error: "Invalid email address or password" });
+  }
+  DB.activeSessionUserId = user.id;
+  saveDb(DB);
+  res.json({ success: true, user });
+});
+
+app.post("/api/auth/register", (req, res) => {
+  const { name, email, phone, role } = req.body;
+  if (!name || !email || !phone) {
+    return res.status(400).json({ error: "Please fill out all required profile fields." });
+  }
+  const existing = DB.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  if (existing) {
+    return res.status(400).json({ error: "A user with this email already exists." });
+  }
+  const newUser = {
+    id: "usr-" + Math.random().toString(36).substr(2, 9),
+    name,
+    email,
+    phone,
+    role: (role || "customer") as "customer" | "admin",
+    createdAt: new Date().toISOString(),
+  };
+  DB.users.push(newUser);
+  DB.activeSessionUserId = newUser.id;
+  saveDb(DB);
+  res.json({ success: true, user: newUser });
+});
+
+app.put("/api/auth/profile/update", (req, res) => {
+  const { name, email, phone } = req.body;
+  const userIndex = DB.users.findIndex(u => u.id === DB.activeSessionUserId);
+  if (userIndex === -1) {
+    return res.status(404).json({ error: "User profile not found." });
+  }
+  DB.users[userIndex] = {
+    ...DB.users[userIndex],
+    name: name || DB.users[userIndex].name,
+    email: email || DB.users[userIndex].email,
+    phone: phone || DB.users[userIndex].phone,
+  };
+  saveDb(DB);
+  res.json({ success: true, user: DB.users[userIndex] });
+});
+
+// 2. Categories API
+app.get("/api/categories", (req, res) => {
+  res.json(DB.categories);
+});
+
+app.post("/api/admin/categories", (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: "Category name is required" });
+  const newCat = {
+    id: "cat-" + Math.random().toString(36).substr(2, 9),
+    name,
+    slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    createdAt: new Date().toISOString()
+  };
+  DB.categories.push(newCat);
+  saveDb(DB);
+  res.status(201).json(newCat);
+});
+
+app.put("/api/admin/categories/:id", (req, res) => {
+  const { id } = req.params;
+  const { name } = req.body;
+  const index = DB.categories.findIndex(c => c.id === id);
+  if (index === -1) return res.status(404).json({ error: "Category not found" });
+  DB.categories[index].name = name || DB.categories[index].name;
+  DB.categories[index].slug = name ? name.toLowerCase().replace(/[^a-z0-9]+/g, "-") : DB.categories[index].slug;
+  saveDb(DB);
+  res.json(DB.categories[index]);
+});
+
+app.delete("/api/admin/categories/:id", (req, res) => {
+  const { id } = req.params;
+  DB.categories = DB.categories.filter(c => c.id !== id);
+  // Also detach or reclassify food items under this category to "cat-uncategorized"? Or delete them?
+  // Let's keep them and filter
+  saveDb(DB);
+  res.json({ success: true });
+});
+
+// 3. Food Items API
+app.get("/api/food-items", (req, res) => {
+  res.json(DB.foodItems);
+});
+
+app.post("/api/admin/food-items", (req, res) => {
+  const { name, categoryId, description, price, image, preparationTime, isFeatured, isPopular, isAvailable } = req.body;
+  if (!name || !price || !categoryId) {
+    return res.status(400).json({ error: "Name, Price, and Category are required" });
+  }
+  const newItem = {
+    id: "food-" + Math.random().toString(36).substr(2, 9),
+    categoryId,
+    name,
+    slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    description: description || "",
+    price: Number(price),
+    image: image || "https://images.unsplash.com/photo-1498837167922-ddd27525d352?auto=format&fit=crop&q=80&w=600",
+    preparationTime: Number(preparationTime) || 12,
+    isFeatured: !!isFeatured,
+    isPopular: !!isPopular,
+    isAvailable: isAvailable !== false,
+    createdAt: new Date().toISOString()
+  };
+  DB.foodItems.push(newItem);
+  saveDb(DB);
+  res.status(201).json(newItem);
+});
+
+app.put("/api/admin/food-items/:id", (req, res) => {
+  const { id } = req.params;
+  const index = DB.foodItems.findIndex(f => f.id === id);
+  if (index === -1) return res.status(404).json({ error: "Food item not found" });
+  const u = req.body;
+  DB.foodItems[index] = {
+    ...DB.foodItems[index],
+    name: u.name || DB.foodItems[index].name,
+    categoryId: u.categoryId || DB.foodItems[index].categoryId,
+    description: u.description !== undefined ? u.description : DB.foodItems[index].description,
+    price: u.price !== undefined ? Number(u.price) : DB.foodItems[index].price,
+    image: u.image || DB.foodItems[index].image,
+    preparationTime: u.preparationTime !== undefined ? Number(u.preparationTime) : DB.foodItems[index].preparationTime,
+    isFeatured: u.isFeatured !== undefined ? !!u.isFeatured : DB.foodItems[index].isFeatured,
+    isPopular: u.isPopular !== undefined ? !!u.isPopular : DB.foodItems[index].isPopular,
+    isAvailable: u.isAvailable !== undefined ? !!u.isAvailable : DB.foodItems[index].isAvailable,
+  };
+  saveDb(DB);
+  res.json(DB.foodItems[index]);
+});
+
+app.delete("/api/admin/food-items/:id", (req, res) => {
+  const { id } = req.params;
+  DB.foodItems = DB.foodItems.filter(f => f.id !== id);
+  saveDb(DB);
+  res.json({ success: true });
+});
+
+// 4. Orders API
+app.get("/api/orders", (req, res) => {
+  // Check active user role
+  const currUser = DB.users.find(u => u.id === DB.activeSessionUserId);
+  if (!currUser) return res.json([]);
+  if (currUser.role === "admin") {
+    // Return all orders sorted by newest first
+    const sorted = [...DB.orders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return res.json(sorted);
+  } else {
+    // Customer sees their own orders
+    const subset = DB.orders.filter(o => o.customerId === currUser.id);
+    const sorted = [...subset].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return res.json(sorted);
+  }
+});
+
+app.get("/api/orders/:id", (req, res) => {
+  const { id } = req.params;
+  const order = DB.orders.find(o => o.id === id);
+  if (!order) return res.status(404).json({ error: "Order not found" });
+  const items = DB.orderItems.filter(i => i.orderId === id);
+  res.json({ ...order, items });
+});
+
+app.post("/api/orders", (req, res) => {
+  const {
+    customerName,
+    customerPhone,
+    customerEmail,
+    deliveryLocation,
+    deliveryAddress,
+    deliveryNotes,
+    paymentMethod,
+    cartItems,
+    deliveryFee,
+  } = req.body;
+
+  if (!cartItems || !cartItems.length) {
+    return res.status(400).json({ error: "Your shopping cart is empty." });
+  }
+  if (!customerName || !customerPhone || !deliveryLocation || !deliveryAddress) {
+    return res.status(400).json({ error: "Please complete all required delivery information." });
+  }
+
+  const orderNumSeed = DB.orders.length + 1001;
+  const orderId = "ord-" + Math.random().toString(36).substr(2, 9);
+  
+  // Calculate amounts
+  let subtotal = 0;
+  const createdItems = cartItems.map((c: any) => {
+    subtotal += c.foodItem.price * c.quantity;
+    return {
+      id: "item-" + Math.random().toString(36).substr(2, 9),
+      orderId: orderId,
+      foodItemId: c.foodItem.id,
+      foodItemName: c.foodItem.name,
+      foodItemImage: c.foodItem.image,
+      quantity: c.quantity,
+      price: c.foodItem.price,
+    };
+  });
+
+  const dFee = Number(deliveryFee) || 3.00;
+  const grandTotal = subtotal + dFee;
+
+  const newOrder = {
+    id: orderId,
+    orderNumber: `IK-${orderNumSeed}`,
+    customerId: DB.activeSessionUserId,
+    customerName,
+    customerPhone,
+    customerEmail: customerEmail || "",
+    deliveryLocation,
+    deliveryAddress,
+    deliveryNotes,
+    paymentMethod,
+    totalAmount: grandTotal,
+    deliveryFee: dFee,
+    status: "Pending" as const,
+    createdAt: new Date().toISOString(),
+  };
+
+  DB.orders.push(newOrder);
+  DB.orderItems.push(...createdItems);
+
+  // Auto save matching address to addresses collection if we don't have it already
+  const existsAddr = DB.addresses.find(a => a.customerId === DB.activeSessionUserId && a.address === deliveryAddress);
+  if (!existsAddr) {
+    DB.addresses.push({
+      id: "addr-" + Math.random().toString(36).substr(2, 9),
+      customerId: DB.activeSessionUserId,
+      location: deliveryLocation,
+      address: deliveryAddress,
+      notes: deliveryNotes,
+    });
+  }
+
+  saveDb(DB);
+  res.status(201).json({ ...newOrder, items: createdItems });
+});
+
+app.put("/api/orders/:id/status", (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  const index = DB.orders.findIndex(o => o.id === id);
+  if (index === -1) return res.status(404).json({ error: "Order not found" });
+  DB.orders[index].status = status;
+  saveDb(DB);
+  res.json(DB.orders[index]);
+});
+
+// Automated mock tracking simulator endpoint for instant simulation delight while tracking!
+app.post("/api/orders/:id/advance-sim", (req, res) => {
+  const { id } = req.params;
+  const index = DB.orders.findIndex(o => o.id === id);
+  if (index === -1) return res.status(404).json({ error: "Order not found" });
+  const states: Array<typeof DB.orders[number]["status"]> = [
+    "Pending", "Confirmed", "Preparing", "Ready", "Out for Delivery", "Delivered"
+  ];
+  const curr = DB.orders[index].status;
+  const currIdx = states.indexOf(curr);
+  if (currIdx !== -1 && currIdx < states.length - 1) {
+    DB.orders[index].status = states[currIdx + 1];
+    saveDb(DB);
+  }
+  res.json(DB.orders[index]);
+});
+
+// 5. Reviews API with AI-assisted sentiment moderation
+app.get("/api/reviews", (req, res) => {
+  const currUser = DB.users.find(u => u.id === DB.activeSessionUserId);
+  const isAdmin = currUser?.role === "admin";
+  if (isAdmin) {
+    // Admin sees all reviews
+    res.json(DB.reviews);
+  } else {
+    // Customers see only approved reviews
+    res.json(DB.reviews.filter(r => r.isApproved));
+  }
+});
+
+app.post("/api/reviews", async (req, res) => {
+  const { foodItemId, foodItemName, rating, review } = req.body;
+  if (!foodItemId || !rating || !review) {
+    return res.status(400).json({ error: "Required review contents are missing." });
+  }
+
+  const currUser = DB.users.find(u => u.id === DB.activeSessionUserId);
+  const customerName = currUser ? currUser.name : "Anonymous Guest";
+
+  const newReviewId = "rev-" + Math.random().toString(36).substr(2, 9);
+  
+  // Create review object default
+  const reviewObj = {
+    id: newReviewId,
+    customerId: DB.activeSessionUserId,
+    customerName,
+    foodItemId,
+    foodItemName,
+    rating: Number(rating),
+    review,
+    isApproved: true, // Default to true so it works cleanly if AI is missing
+    createdAt: new Date().toISOString(),
+  };
+
+  // Perform AI Moderation via Gemini API!
+  const aiClient = getGeminiClient();
+  let aiExplanation = "Auto-approved instantly.";
+  
+  if (aiClient) {
+    try {
+      const prompt = `
+        You are a content safety and reviews assistant for "Issa Kitchen" restaurant.
+        Analyze the following customer food review.
+        Rule out spam, bad words, severe insults, and highly irrelevant gibberish.
+        Output ONLY a JSON format structured precisely like this example:
+        {
+          "isSafe": true,
+          "explanation": "Friendly constructive sentiment detected."
+        }
+        
+        Review to analyze: "${review}"
+      `;
+      const aiResponse = await aiClient.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+        }
+      });
+      const resText = aiResponse.text ? aiResponse.text.trim() : "{}";
+      const result = JSON.parse(resText);
+      if (result && typeof result.isSafe === "boolean") {
+        reviewObj.isApproved = result.isSafe;
+        aiExplanation = result.explanation || (result.isSafe ? "AI Safe" : "AI Filtered");
+      }
+    } catch (e) {
+      console.error("Gemini AI Review moderation failed, falling back to auto-approval.", e);
+      aiExplanation = "Auto-approved (Gemini API fallback)";
+    }
+  }
+
+  DB.reviews.push(reviewObj);
+  saveDb(DB);
+
+  res.status(201).json({ review: reviewObj, aiStatus: aiExplanation });
+});
+
+app.put("/api/reviews/:id/approve", (req, res) => {
+  const { id } = req.params;
+  const index = DB.reviews.findIndex(r => r.id === id);
+  if (index === -1) return res.status(404).json({ error: "Review not found" });
+  DB.reviews[index].isApproved = true;
+  saveDb(DB);
+  res.json(DB.reviews[index]);
+});
+
+app.put("/api/reviews/:id/reject", (req, res) => {
+  const { id } = req.params;
+  const index = DB.reviews.findIndex(r => r.id === id);
+  if (index === -1) return res.status(404).json({ error: "Review not found" });
+  DB.reviews[index].isApproved = false;
+  saveDb(DB);
+  res.json(DB.reviews[index]);
+});
+
+// Delete review (Admin)
+app.delete("/api/reviews/:id", (req, res) => {
+  const { id } = req.params;
+  DB.reviews = DB.reviews.filter(r => r.id !== id);
+  saveDb(DB);
+  res.json({ success: true });
+});
+
+// Addresses helper APIs
+app.get("/api/addresses", (req, res) => {
+  const userAddr = DB.addresses.filter(a => a.customerId === DB.activeSessionUserId);
+  res.json(userAddr);
+});
+
+// 6. Customers list with calculated dynamic totals (Admin dashboard section)
+app.get("/api/admin/customers", (req, res) => {
+  const result = DB.users
+    .filter(u => u.role === "customer")
+    .map(cust => {
+      const custOrders = DB.orders.filter(o => o.customerId === cust.id);
+      const totalSpend = custOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+      return {
+        id: cust.id,
+        name: cust.name,
+        email: cust.email,
+        phone: cust.phone,
+        totalOrders: custOrders.length,
+        totalSpend: Math.round(totalSpend * 100) / 100,
+        createdAt: cust.createdAt,
+      };
+    });
+  res.json(result);
+});
+
+// 7. Dynamic Business Analytics API
+app.get("/api/admin/analytics", (req, res) => {
+  // Counts
+  const totalOrders = DB.orders.length;
+  const totalRevenue = DB.orders
+    .filter(o => o.status !== "Cancelled")
+    .reduce((sum, o) => sum + o.totalAmount, 0);
+  const totalCustomers = DB.users.filter(u => u.role === "customer").length;
+  const totalFoodItems = DB.foodItems.length;
+  const activeOrders = DB.orders.filter(o => o.status !== "Delivered" && o.status !== "Cancelled").length;
+
+  // Popular dishes calculation
+  const dishCounts: Record<string, { name: string; count: number; revenue: number }> = {};
+  DB.orderItems.forEach(item => {
+    if (!dishCounts[item.foodItemId]) {
+      dishCounts[item.foodItemId] = { name: item.foodItemName, count: 0, revenue: 0 };
+    }
+    dishCounts[item.foodItemId].count += item.quantity;
+    dishCounts[item.foodItemId].revenue += item.price * item.quantity;
+  });
+  const popularDishes = Object.values(dishCounts)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  // Weekly/Monthly sales list
+  // Generate daily points over last 7 days for fine graphs
+  const last7Days = Array.from({ length: 7 }).map((_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    return d.toISOString().split("T")[0];
+  }).reverse();
+
+  const dailySales = last7Days.map(dateStr => {
+    const dayOrders = DB.orders.filter(o => o.createdAt.startsWith(dateStr) && o.status !== "Cancelled");
+    const amount = dayOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+    const count = dayOrders.length;
+    // Format label to beautiful weekday
+    const dayName = new Date(dateStr).toLocaleDateString("en-US", { weekday: "short" });
+    return { date: dateStr, day: dayName, revenue: Math.round(amount * 100) / 100, count };
+  });
+
+  res.json({
+    summary: {
+      totalOrders,
+      totalRevenue: Math.round(totalRevenue * 100) / 100,
+      totalCustomers,
+      totalFoodItems,
+      activeOrders,
+    },
+    popularDishes,
+    dailySales,
+  });
+});
+
+// Reset Database API (easy debugging and demoing)
+app.post("/api/reset-db", (req, res) => {
+  DB = {
+    categories: defaultCategories,
+    foodItems: defaultFoodItems,
+    users: defaultUsers,
+    reviews: defaultReviews,
+    orders: defaultOrders,
+    orderItems: defaultOrderItems,
+    addresses: defaultAddresses,
+    activeSessionUserId: "usr-customer",
+  };
+  saveDb(DB);
+  res.json({ success: true, message: "Database reset to original seed data loaded successfully." });
+});
+
+// ==========================================
+// STATIC FRONTEND SERVING & DEVELOPMENT
+// ==========================================
+
+async function startServer() {
+  // Vite integration for dev assets or static deployment
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    // Mount Vite middlewares after custom API endpoints
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`[Issa Kitchen] Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();

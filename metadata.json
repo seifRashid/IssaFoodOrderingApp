@@ -1,0 +1,6 @@
+{
+  "name": "Issa Kitchen",
+  "description": "An elegant, production-ready, and highly accessible food ordering and restaurant management platform for Issa Kitchen.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
